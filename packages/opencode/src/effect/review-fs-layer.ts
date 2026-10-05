@@ -138,6 +138,13 @@ export function wrap(fs: FSUtil.Interface) {
     return yield* fs.exists(path)
   })
 
+  const existsSafe = Effect.fn("ReviewFs.existsSafe")(function* (path: string) {
+    if (!ReviewOverlay.isEnabled()) return yield* fs.existsSafe(path)
+    const entry = yield* entryFor(path)
+    if (entry) return !("deleted" in entry)
+    return yield* fs.existsSafe(path)
+  })
+
   const stat = Effect.fn("ReviewFs.stat")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.stat(path)
     const entry = yield* entryFor(path)
@@ -215,6 +222,7 @@ export function wrap(fs: FSUtil.Interface) {
     readFile,
     readFileStringSafe,
     exists,
+    existsSafe,
     stat,
     isFile,
     isDir,

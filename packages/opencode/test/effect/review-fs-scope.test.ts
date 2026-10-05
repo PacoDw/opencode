@@ -1,7 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -162,6 +162,42 @@ describe("ReviewFs scope", () => {
 
       const result = ReviewOverlay.get(file)
       expect(result && "content" in result ? result.content : undefined).toBe("impl\nnew tests\n")
+    }),
+  )
+
+  it.instance("write over a file that is only staged sees it as existing", () =>
+    Effect.gen(function* () {
+      enableReview()
+      const test = yield* TestInstance
+      const write = yield* registryTool("write")
+      const file = path.join(test.directory, "scope-rewrite.txt")
+
+      yield* write.execute({ filePath: file, content: "v1\n" }, ctx)
+      const result = yield* write.execute({ filePath: file, content: "v2\n" }, ctx)
+
+      expect(result.metadata.exists).toBe(true)
+      const staged = ReviewOverlay.get(file)
+      expect(staged && "content" in staged ? staged.content : undefined).toBe("v2\n")
+    }),
+  )
+
+  it.instance("edit with an empty oldString refuses to overwrite a file that is only staged", () =>
+    Effect.gen(function* () {
+      enableReview()
+      const test = yield* TestInstance
+      const write = yield* registryTool("write")
+      const edit = yield* registryTool("edit")
+      const file = path.join(test.directory, "scope-create.txt")
+
+      yield* write.execute({ filePath: file, content: "created\n" }, ctx)
+      const exit = yield* edit
+        .execute({ filePath: file, oldString: "", newString: "clobbered\n" }, ctx)
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("oldString cannot be empty")
+      const staged = ReviewOverlay.get(file)
+      expect(staged && "content" in staged ? staged.content : undefined).toBe("created\n")
     }),
   )
 

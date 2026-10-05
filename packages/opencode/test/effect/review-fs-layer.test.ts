@@ -30,6 +30,7 @@ describe("ReviewFs overlay", () => {
       expect(yield* readDisk(filepath)).toBe("")
       expect(yield* afs.readFileString(filepath)).toBe("staged content")
       expect(yield* afs.exists(filepath)).toBe(true)
+      expect(yield* afs.existsSafe(filepath)).toBe(true)
       expect(yield* afs.isFile(filepath)).toBe(true)
       const info = yield* afs.stat(filepath)
       expect(info.type).toBe("File")
@@ -74,6 +75,7 @@ describe("ReviewFs overlay", () => {
       ReviewOverlay.markDeleted(filepath)
 
       expect(yield* afs.exists(filepath)).toBe(false)
+      expect(yield* afs.existsSafe(filepath)).toBe(false)
       expect(yield* afs.isFile(filepath)).toBe(false)
       const stat = yield* afs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
       expect(stat).toBeUndefined()
