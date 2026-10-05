@@ -100,6 +100,47 @@ describe("ReviewFs scope", () => {
     }),
   )
 
+  it.instance("read from the registry returns staged content after an edit", () =>
+    Effect.gen(function* () {
+      enableReview()
+      const test = yield* TestInstance
+      const edit = yield* registryTool("edit")
+      const read = yield* registryTool("read")
+      const file = path.join(test.directory, "scope-read.txt")
+      yield* Effect.promise(() => fs.writeFile(file, "before\n", "utf-8"))
+
+      yield* edit.execute({ filePath: file, oldString: "before", newString: "after" }, ctx)
+      const result = yield* read.execute({ filePath: file }, ctx)
+
+      expect(yield* readDisk(file)).toBe("before\n")
+      expect(result.output).toContain("1: after")
+      expect(result.output).not.toContain("before")
+    }),
+  )
+
+  it.instance("read from the registry opens a file that was only staged by write", () =>
+    Effect.gen(function* () {
+      enableReview()
+      const test = yield* TestInstance
+      const write = yield* registryTool("write")
+      const read = yield* registryTool("read")
+      const file = path.join(test.directory, "scope-new.txt")
+
+      yield* write.execute({ filePath: file, content: "created\n" }, ctx)
+      const result = yield* read.execute({ filePath: file }, ctx)
+
+      expect(
+        yield* Effect.promise(() =>
+          fs.access(file).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      ).toBe(false)
+      expect(result.output).toContain("1: created")
+    }),
+  )
+
   it.instance("edit from the registry writes to disk when review mode is off", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

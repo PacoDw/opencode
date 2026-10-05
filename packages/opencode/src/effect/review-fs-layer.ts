@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Layer, Option } from "effect"
+import { Effect, FileSystem, Layer, Option, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
@@ -37,6 +37,50 @@ function overlayFileStat(content: string): FileSystem.File.Info {
     size: FileSystem.Size(new TextEncoder().encode(content).length),
     blksize: Option.none(),
     blocks: Option.none(),
+  }
+}
+
+const overlayReadOnly = (method: string, path: string) =>
+  PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method,
+    pathOrDescriptor: path,
+    syscall: method,
+  })
+
+// Read-only handle over staged content. The read tool samples files through
+// open() and readAlloc(); a file that only exists in the overlay has no disk
+// file to open.
+function overlayFile(path: string, content: string): FileSystem.File {
+  const bytes = new TextEncoder().encode(content)
+  let position = 0
+  return {
+    [FileSystem.FileTypeId]: FileSystem.FileTypeId,
+    fd: FileSystem.FileDescriptor(-1),
+    stat: Effect.succeed(overlayFileStat(content)),
+    seek: (offset, from) =>
+      Effect.sync(() => {
+        position = from === "start" ? Number(offset) : position + Number(offset)
+      }),
+    sync: Effect.void,
+    read: (buffer) =>
+      Effect.sync(() => {
+        const chunk = bytes.subarray(position, position + buffer.length)
+        buffer.set(chunk)
+        position += chunk.length
+        return FileSystem.Size(chunk.length)
+      }),
+    readAlloc: (size) =>
+      Effect.sync(() => {
+        if (position >= bytes.length) return Option.none()
+        const chunk = bytes.slice(position, position + Number(size))
+        position += chunk.length
+        return Option.some(chunk)
+      }),
+    truncate: () => Effect.fail(overlayReadOnly("truncate", path)),
+    write: () => Effect.fail(overlayReadOnly("write", path)),
+    writeAll: () => Effect.fail(overlayReadOnly("writeAll", path)),
   }
 }
 
@@ -124,6 +168,33 @@ export function wrap(fs: FSUtil.Interface) {
     ReviewOverlay.stage(path, content)
   })
 
+  // The read tool streams text lines and samples bytes through these two, so they
+  // must see staged content too or the agent re-reads its file without its edits.
+  const stream: FSUtil.Interface["stream"] = (path, options) =>
+    Stream.unwrap(
+      Effect.sync(() => {
+        if (!ReviewOverlay.isEnabled()) return fs.stream(path, options)
+        const entry = ReviewOverlay.get(path)
+        if (!entry) return fs.stream(path, options)
+        if ("deleted" in entry) return Stream.fail(overlayNotFound("stream", path))
+        const bytes = new TextEncoder().encode(entry.content)
+        const start = Number(options?.offset ?? 0)
+        const end = options?.bytesToRead === undefined ? bytes.length : start + Number(options.bytesToRead)
+        return Stream.make(bytes.slice(start, end))
+      }),
+    )
+
+  const open: FSUtil.Interface["open"] = (path, options) =>
+    Effect.gen(function* () {
+      if (!ReviewOverlay.isEnabled()) return yield* fs.open(path, options)
+      const entry = ReviewOverlay.get(path)
+      if (!entry) return yield* fs.open(path, options)
+      if ("deleted" in entry) return yield* Effect.fail(overlayNotFound("open", path))
+      // Only read handles are served from the overlay; writes are staged through writeWithDirs.
+      if (options?.flag !== undefined && options.flag !== "r") return yield* fs.open(path, options)
+      return overlayFile(path, entry.content)
+    })
+
   return FSUtil.Service.of({
     ...fs,
     readFileString,
@@ -134,6 +205,8 @@ export function wrap(fs: FSUtil.Interface) {
     isFile,
     isDir,
     writeWithDirs,
+    stream,
+    open,
   })
 }
 
