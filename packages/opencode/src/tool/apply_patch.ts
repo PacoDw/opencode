@@ -200,7 +200,7 @@ export const ApplyPatchTool = Tool.define(
         patch: change.diff,
         additions: change.additions,
         deletions: change.deletions,
-        movePath: change.movePath,
+        ...(change.movePath ? { movePath: change.movePath } : {}),
         diffPath: change.movePath ?? change.filePath,
         oldText: change.oldContent,
         newText: change.type === "delete" ? "" : change.newContent,
