@@ -43,6 +43,7 @@ import { Todo } from "../session/todo"
 import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { ReviewFs } from "@/effect/review-fs-layer"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
@@ -97,10 +98,13 @@ const layer = Layer.effect(
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
     const mcp = yield* MCP.Service
+    // Only the tools that read and write user files see staged review edits.
+    const reviewFs = ReviewFs.wrap(yield* FSUtil.Service)
+    const withReviewFs = Effect.provideService(FSUtil.Service, reviewFs)
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
-    const read = yield* ReadTool
+    const read = yield* ReadTool.pipe(withReviewFs)
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
@@ -109,10 +113,10 @@ const layer = Layer.effect(
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
-    const writetool = yield* WriteTool
-    const edit = yield* EditTool
+    const writetool = yield* WriteTool.pipe(withReviewFs)
+    const edit = yield* EditTool.pipe(withReviewFs)
     const greptool = yield* GrepTool
-    const patchtool = yield* ApplyPatchTool
+    const patchtool = yield* ApplyPatchTool.pipe(withReviewFs)
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
