@@ -94,11 +94,20 @@ export function wrap(fs: FSUtil.Interface) {
   // would silently undo that change.
   const entryFor = Effect.fnUntraced(function* (path: string) {
     const entry = ReviewOverlay.get(path)
-    if (!entry || "deleted" in entry) return entry
-    const disk = yield* fs.readFileStringSafe(path).pipe(Effect.catch(() => Effect.succeed(entry.content)))
-    if (!ReviewOverlay.isStale(path, disk)) return entry
+    if (!entry) return entry
+    if (!(yield* changedOnDisk(path, entry))) return entry
     ReviewOverlay.discard(path)
     return undefined
+  })
+
+  // Deletes reach disk before they are marked (ACP has no deleteFile), so a
+  // deleted path that exists again was restored by someone else. Staged content
+  // is stale once the disk holds a version the overlay neither produced nor
+  // started from.
+  const changedOnDisk = Effect.fnUntraced(function* (path: string, entry: ReviewOverlay.Entry) {
+    if ("deleted" in entry) return yield* fs.existsSafe(path)
+    const disk = yield* fs.readFileStringSafe(path).pipe(Effect.catch(() => Effect.succeed(entry.content)))
+    return ReviewOverlay.isStale(path, disk)
   })
 
   const readFileString = Effect.fn("ReviewFs.readFileString")(function* (path: string) {
@@ -184,8 +193,9 @@ export function wrap(fs: FSUtil.Interface) {
     if (!ReviewOverlay.isEnabled() || typeof content !== "string") {
       return yield* fs.writeWithDirs(path, content, mode)
     }
+    // A new entry, or one that replaces a delete, starts from the disk as it is now.
     const entry = yield* entryFor(path)
-    if (!entry) ReviewOverlay.trackBase(path, yield* fs.readFileStringSafe(path))
+    if (!entry || "deleted" in entry) ReviewOverlay.trackBase(path, yield* fs.readFileStringSafe(path))
     ReviewOverlay.stage(path, content)
   })
 

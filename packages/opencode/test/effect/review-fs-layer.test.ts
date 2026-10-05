@@ -64,7 +64,7 @@ describe("ReviewFs overlay", () => {
     }),
   )
 
-  it.instance("markDeleted hides overlay paths", () =>
+  it.instance("markDeleted hides a staged file removed from disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const afs = yield* FSUtil.Service
@@ -72,6 +72,9 @@ describe("ReviewFs overlay", () => {
 
       const filepath = path.join(test.directory, "gone.txt")
       yield* Effect.promise(() => fs.writeFile(filepath, "on disk", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "staged")
+      // apply_patch removes the file from disk before marking it deleted.
+      yield* Effect.promise(() => fs.rm(filepath))
       ReviewOverlay.markDeleted(filepath)
 
       expect(yield* afs.exists(filepath)).toBe(false)
@@ -79,6 +82,48 @@ describe("ReviewFs overlay", () => {
       expect(yield* afs.isFile(filepath)).toBe(false)
       const stat = yield* afs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
       expect(stat).toBeUndefined()
+      const error = yield* afs.readFileString(filepath).pipe(Effect.flip)
+      expect(error.reason._tag).toBe("NotFound")
+    }),
+  )
+
+  it.instance("a deleted path that is back on disk is served from disk", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "restored.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "original\n", "utf-8"))
+      yield* Effect.promise(() => fs.rm(filepath))
+      ReviewOverlay.markDeleted(filepath)
+      expect(yield* afs.exists(filepath)).toBe(false)
+
+      // Restored behind the overlay, for example with `git checkout`.
+      yield* Effect.promise(() => fs.writeFile(filepath, "restored\n", "utf-8"))
+
+      expect(yield* afs.exists(filepath)).toBe(true)
+      expect(yield* afs.readFileString(filepath)).toBe("restored\n")
+      expect(ReviewOverlay.get(filepath)).toBeUndefined()
+    }),
+  )
+
+  it.instance("a file re-created after a delete stays staged while the disk lacks it", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "recreated.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "c0\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "c1\n")
+      yield* Effect.promise(() => fs.rm(filepath))
+      ReviewOverlay.markDeleted(filepath)
+
+      yield* afs.writeWithDirs(filepath, "recreated\n")
+
+      expect(yield* afs.readFileString(filepath)).toBe("recreated\n")
+      expect(yield* readDisk(filepath)).toBe("")
     }),
   )
 
@@ -134,6 +179,8 @@ describe("ReviewFs overlay", () => {
 
       const filepath = path.join(test.directory, "deleted-stream.txt")
       yield* Effect.promise(() => fs.writeFile(filepath, "on disk", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "staged")
+      yield* Effect.promise(() => fs.rm(filepath))
       ReviewOverlay.markDeleted(filepath)
 
       const error = yield* Stream.runCollect(afs.stream(filepath)).pipe(Effect.flip)
