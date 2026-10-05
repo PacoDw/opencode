@@ -106,4 +106,69 @@ describe("ReviewOverlay", () => {
     expect(ReviewOverlay.has("/tmp/x.ts")).toBe(false)
     expect(ReviewOverlay.drainPendingWrites()).toEqual([])
   })
+
+  describe("staleness against disk", () => {
+    it("untracked entries are never stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.stage("/tmp/untracked.ts", "staged")
+      expect(ReviewOverlay.isStale("/tmp/untracked.ts", "anything else")).toBe(false)
+    })
+
+    it("disk still at the base is not stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/base.ts", "original")
+      ReviewOverlay.stage("/tmp/base.ts", "edited")
+      expect(ReviewOverlay.isStale("/tmp/base.ts", "original")).toBe(false)
+    })
+
+    it("disk already holding the staged content is not stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/applied.ts", "original")
+      ReviewOverlay.stage("/tmp/applied.ts", "edited")
+      expect(ReviewOverlay.isStale("/tmp/applied.ts", "edited")).toBe(false)
+    })
+
+    it("disk holding an earlier staged version is not stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/twice.ts", "c0")
+      ReviewOverlay.stage("/tmp/twice.ts", "c1")
+      ReviewOverlay.stage("/tmp/twice.ts", "c2")
+      expect(ReviewOverlay.isStale("/tmp/twice.ts", "c1")).toBe(false)
+    })
+
+    it("a new file not yet on disk is not stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/new.ts", undefined)
+      ReviewOverlay.stage("/tmp/new.ts", "created")
+      expect(ReviewOverlay.isStale("/tmp/new.ts", undefined)).toBe(false)
+    })
+
+    it("disk changed by someone else is stale", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/external.ts", "original")
+      ReviewOverlay.stage("/tmp/external.ts", "edited")
+      expect(ReviewOverlay.isStale("/tmp/external.ts", "truncated by shell")).toBe(true)
+      expect(ReviewOverlay.isStale("/tmp/external.ts", undefined)).toBe(true)
+    })
+
+    it("ignores a leading BOM when comparing", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.trackBase("/tmp/bom.ts", "original")
+      ReviewOverlay.stage("/tmp/bom.ts", "\uFEFFedited")
+      expect(ReviewOverlay.isStale("/tmp/bom.ts", "edited")).toBe(false)
+    })
+
+    it("discard drops the entry, its pending writes and its versions", () => {
+      ReviewOverlay.reset()
+      ReviewOverlay.setActiveSession("sess-1")
+      ReviewOverlay.trackBase("/tmp/drop.ts", "original")
+      ReviewOverlay.stage("/tmp/drop.ts", "edited")
+      ReviewOverlay.stage("/tmp/keep.ts", "kept")
+      ReviewOverlay.discard("/tmp/drop.ts")
+
+      expect(ReviewOverlay.get("/tmp/drop.ts")).toBeUndefined()
+      expect(ReviewOverlay.isStale("/tmp/drop.ts", "anything")).toBe(false)
+      expect(ReviewOverlay.drainPendingWrites().map((item) => item.content)).toEqual(["kept"])
+    })
+  })
 })

@@ -141,6 +141,30 @@ describe("ReviewFs scope", () => {
     }),
   )
 
+  // Reproduces a real Windsurf session: the client writes each staged edit to
+  // disk, the agent then truncates the file through the shell, and its next
+  // edit must apply to the truncated file instead of the stale staged copy.
+  it.instance("edit after an external truncation applies to the disk, not the stale staged copy", () =>
+    Effect.gen(function* () {
+      enableReview()
+      const test = yield* TestInstance
+      const edit = yield* registryTool("edit")
+      const file = path.join(test.directory, "scope-truncated.rs")
+      yield* Effect.promise(() => fs.writeFile(file, "impl\nold tests\n", "utf-8"))
+
+      yield* edit.execute({ filePath: file, oldString: "old tests", newString: "old tests v2" }, ctx)
+      const staged = ReviewOverlay.get(file)
+      const applied = staged && "content" in staged ? staged.content : ""
+      yield* Effect.promise(() => fs.writeFile(file, applied, "utf-8"))
+      yield* Effect.promise(() => fs.writeFile(file, "impl\n", "utf-8"))
+
+      yield* edit.execute({ filePath: file, oldString: "impl\n", newString: "impl\nnew tests\n" }, ctx)
+
+      const result = ReviewOverlay.get(file)
+      expect(result && "content" in result ? result.content : undefined).toBe("impl\nnew tests\n")
+    }),
+  )
+
   it.instance("edit from the registry writes to disk when review mode is off", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

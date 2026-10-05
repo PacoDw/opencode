@@ -179,4 +179,84 @@ describe("ReviewFs overlay", () => {
       expect(new TextDecoder().decode(sample)).toBe("on disk")
     }),
   )
+
+  it.instance("drops a staged entry when the disk is changed by someone else", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+      ReviewOverlay.setActiveSession("sess-1")
+
+      const filepath = path.join(test.directory, "external.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "original\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "staged\n")
+      yield* Effect.promise(() => fs.writeFile(filepath, "changed by shell\n", "utf-8"))
+
+      expect(yield* afs.readFileString(filepath)).toBe("changed by shell\n")
+      expect(ReviewOverlay.get(filepath)).toBeUndefined()
+      expect(ReviewOverlay.drainPendingWrites()).toEqual([])
+    }),
+  )
+
+  it.instance("keeps serving staged content once the client wrote it to disk", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "applied.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "original\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "staged\n")
+      yield* Effect.promise(() => fs.writeFile(filepath, "staged\n", "utf-8"))
+
+      expect(yield* afs.readFileString(filepath)).toBe("staged\n")
+      expect(ReviewOverlay.get(filepath)).toBeDefined()
+    }),
+  )
+
+  it.instance("consecutive edits survive a client that applies each write immediately", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "consecutive.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "c0\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "c1\n")
+      yield* Effect.promise(() => fs.writeFile(filepath, "c1\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "c2\n")
+
+      expect(yield* afs.readFileString(filepath)).toBe("c2\n")
+    }),
+  )
+
+  it.instance("a staged new file stays visible while it is not on disk", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "brand-new.txt")
+      yield* afs.writeWithDirs(filepath, "created\n")
+
+      expect(yield* afs.exists(filepath)).toBe(true)
+      expect(yield* afs.readFileString(filepath)).toBe("created\n")
+    }),
+  )
+
+  it.instance("stream serves the disk after an external change", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const afs = yield* FSUtil.Service
+      ReviewOverlay.setEnabled(true)
+
+      const filepath = path.join(test.directory, "stream-external.txt")
+      yield* Effect.promise(() => fs.writeFile(filepath, "original\n", "utf-8"))
+      yield* afs.writeWithDirs(filepath, "staged\n")
+      yield* Effect.promise(() => fs.writeFile(filepath, "changed by shell\n", "utf-8"))
+
+      const chunks = yield* Stream.runCollect(afs.stream(filepath))
+      expect(new TextDecoder().decode(Buffer.concat(Array.from(chunks)))).toBe("changed by shell\n")
+    }),
+  )
 })

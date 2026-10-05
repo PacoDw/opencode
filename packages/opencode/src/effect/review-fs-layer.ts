@@ -89,9 +89,21 @@ function overlayFile(path: string, content: string): FileSystem.File {
 // Replacing FSUtil for the whole server graph would also stage internal writes
 // (storage, config, caches) and ship them to the client as agent edits.
 export function wrap(fs: FSUtil.Interface) {
+  // Resolve the staged entry for a path, dropping it when the disk changed behind
+  // the overlay (shell, user, another process). Serving or sending the stale copy
+  // would silently undo that change.
+  const entryFor = Effect.fnUntraced(function* (path: string) {
+    const entry = ReviewOverlay.get(path)
+    if (!entry || "deleted" in entry) return entry
+    const disk = yield* fs.readFileStringSafe(path).pipe(Effect.catch(() => Effect.succeed(entry.content)))
+    if (!ReviewOverlay.isStale(path, disk)) return entry
+    ReviewOverlay.discard(path)
+    return undefined
+  })
+
   const readFileString = Effect.fn("ReviewFs.readFileString")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFileString(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) {
       if ("deleted" in entry) return yield* Effect.fail(overlayNotFound("readFileString", path))
       return entry.content
@@ -101,7 +113,7 @@ export function wrap(fs: FSUtil.Interface) {
 
   const readFile = Effect.fn("ReviewFs.readFile")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFile(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) {
       if ("deleted" in entry) return yield* Effect.fail(overlayNotFound("readFile", path))
       return new TextEncoder().encode(entry.content)
@@ -111,7 +123,7 @@ export function wrap(fs: FSUtil.Interface) {
 
   const readFileStringSafe = Effect.fn("ReviewFs.readFileStringSafe")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFileStringSafe(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) {
       if ("deleted" in entry) return undefined
       return entry.content
@@ -121,14 +133,14 @@ export function wrap(fs: FSUtil.Interface) {
 
   const exists = Effect.fn("ReviewFs.exists")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.exists(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) return !("deleted" in entry)
     return yield* fs.exists(path)
   })
 
   const stat = Effect.fn("ReviewFs.stat")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.stat(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) {
       if ("deleted" in entry) return yield* Effect.fail(overlayNotFound("stat", path))
       const disk = yield* fs.stat(path).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -143,14 +155,14 @@ export function wrap(fs: FSUtil.Interface) {
 
   const isFile = Effect.fn("ReviewFs.isFile")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.isFile(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) return !("deleted" in entry)
     return yield* fs.isFile(path)
   })
 
   const isDir = Effect.fn("ReviewFs.isDir")(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.isDir(path)
-    const entry = ReviewOverlay.get(path)
+    const entry = yield* entryFor(path)
     if (entry) return false
     return yield* fs.isDir(path)
   })
@@ -165,6 +177,8 @@ export function wrap(fs: FSUtil.Interface) {
     if (!ReviewOverlay.isEnabled() || typeof content !== "string") {
       return yield* fs.writeWithDirs(path, content, mode)
     }
+    const entry = yield* entryFor(path)
+    if (!entry) ReviewOverlay.trackBase(path, yield* fs.readFileStringSafe(path))
     ReviewOverlay.stage(path, content)
   })
 
@@ -172,9 +186,9 @@ export function wrap(fs: FSUtil.Interface) {
   // must see staged content too or the agent re-reads its file without its edits.
   const stream: FSUtil.Interface["stream"] = (path, options) =>
     Stream.unwrap(
-      Effect.sync(() => {
+      Effect.gen(function* () {
         if (!ReviewOverlay.isEnabled()) return fs.stream(path, options)
-        const entry = ReviewOverlay.get(path)
+        const entry = yield* entryFor(path)
         if (!entry) return fs.stream(path, options)
         if ("deleted" in entry) return Stream.fail(overlayNotFound("stream", path))
         const bytes = new TextEncoder().encode(entry.content)
@@ -187,7 +201,7 @@ export function wrap(fs: FSUtil.Interface) {
   const open: FSUtil.Interface["open"] = (path, options) =>
     Effect.gen(function* () {
       if (!ReviewOverlay.isEnabled()) return yield* fs.open(path, options)
-      const entry = ReviewOverlay.get(path)
+      const entry = yield* entryFor(path)
       if (!entry) return yield* fs.open(path, options)
       if ("deleted" in entry) return yield* Effect.fail(overlayNotFound("open", path))
       // Only read handles are served from the overlay; writes are staged through writeWithDirs.

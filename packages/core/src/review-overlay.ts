@@ -1,6 +1,7 @@
 export * as ReviewOverlay from "./review-overlay"
 
 import { FSUtil } from "./fs-util"
+import { Hash } from "./util/hash"
 
 // In-memory staging area for ACP review mode. While enabled, file writes are
 // kept here instead of going to disk, and are later sent to the client so they
@@ -20,6 +21,12 @@ const pending: PendingWrite[] = []
 // markFlushed() populates this — draining alone does not, so a write that was
 // drained but failed to send stays eligible for a retry.
 const flushedContent = new Map<string, string>()
+// Every disk state the overlay can explain for a path during this turn: the
+// disk content when it was first staged (undefined when the file did not exist)
+// plus every staged version, since clients may write each one to disk as it
+// arrives. Disk content outside this set means someone else changed the file.
+// Stored as hashes so a long turn of edits to a large file stays cheap to hold.
+const versions = new Map<string, Set<string | undefined>>()
 
 export function setEnabled(value: boolean) {
   enabled = value
@@ -36,7 +43,33 @@ export function setActiveSession(sessionID: string | undefined) {
 export function stage(path: string, content: string) {
   const key = FSUtil.resolve(path)
   entries.set(key, { content })
+  versions.get(key)?.add(version(content))
   if (activeSession) pending.push({ sessionID: activeSession, path: key, content })
+}
+
+// Record the disk content a path had before its first staged write in this
+// turn. Entries staged without a base are never treated as stale.
+export function trackBase(path: string, disk: string | undefined) {
+  versions.set(FSUtil.resolve(path), new Set([version(disk)]))
+}
+
+// True when the disk no longer matches any state the overlay produced or
+// started from, so the staged entry would overwrite someone else's change.
+export function isStale(path: string, disk: string | undefined) {
+  const known = versions.get(FSUtil.resolve(path))
+  if (!known) return false
+  return !known.has(version(disk))
+}
+
+// Forget everything staged for a path, including writes not yet sent.
+export function discard(path: string) {
+  const key = FSUtil.resolve(path)
+  entries.delete(key)
+  flushedContent.delete(key)
+  versions.delete(key)
+  const kept = pending.filter((item) => item.path !== key)
+  pending.length = 0
+  pending.push(...kept)
 }
 
 export function markDeleted(path: string) {
@@ -85,6 +118,7 @@ export function clear() {
   entries.clear()
   pending.length = 0
   flushedContent.clear()
+  versions.clear()
   activeSession = undefined
 }
 
@@ -95,4 +129,12 @@ export function reset() {
   entries.clear()
   pending.length = 0
   flushedContent.clear()
+  versions.clear()
+}
+
+// Decoding a file drops its leading BOM while staged content keeps it, so
+// compare without it.
+function version(text: string | undefined) {
+  if (text === undefined) return undefined
+  return Hash.fast(text.replace(/^\uFEFF/, ""))
 }
