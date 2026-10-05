@@ -1,12 +1,8 @@
-import { Effect, FileSystem, Layer, Option, Stream } from "effect"
-import * as PlatformError from "effect/PlatformError"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { makeGlobalNode } from "@opencode-ai/core/effect/app-node"
-import { filesystem } from "@opencode-ai/core/effect/app-node-platform"
+import { Effect, FileSystem, Option, PlatformError, Stream } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ReviewOverlay } from "@opencode-ai/core/review-overlay"
 
-// FSUtil layer for ACP review mode. It wraps the real FSUtil: writes are sent to
+// FSUtil wrapper for ACP review mode. It wraps the real FSUtil: writes are sent to
 // the ReviewOverlay (staged in memory) and reads return staged content, so the
 // agent sees its own pending edits without touching disk. When review mode is
 // off, every call passes straight through to the real FSUtil.
@@ -110,7 +106,7 @@ export function wrap(fs: FSUtil.Interface) {
     return ReviewOverlay.isStale(path, disk)
   })
 
-  const readFileString = Effect.fn("ReviewFs.readFileString")(function* (path: string) {
+  const readFileString = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFileString(path)
     const entry = yield* entryFor(path)
     if (entry) {
@@ -120,7 +116,7 @@ export function wrap(fs: FSUtil.Interface) {
     return yield* fs.readFileString(path)
   })
 
-  const readFile = Effect.fn("ReviewFs.readFile")(function* (path: string) {
+  const readFile = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFile(path)
     const entry = yield* entryFor(path)
     if (entry) {
@@ -130,7 +126,7 @@ export function wrap(fs: FSUtil.Interface) {
     return yield* fs.readFile(path)
   })
 
-  const readFileStringSafe = Effect.fn("ReviewFs.readFileStringSafe")(function* (path: string) {
+  const readFileStringSafe = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.readFileStringSafe(path)
     const entry = yield* entryFor(path)
     if (entry) {
@@ -140,21 +136,21 @@ export function wrap(fs: FSUtil.Interface) {
     return yield* fs.readFileStringSafe(path)
   })
 
-  const exists = Effect.fn("ReviewFs.exists")(function* (path: string) {
+  const exists = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.exists(path)
     const entry = yield* entryFor(path)
     if (entry) return !("deleted" in entry)
     return yield* fs.exists(path)
   })
 
-  const existsSafe = Effect.fn("ReviewFs.existsSafe")(function* (path: string) {
+  const existsSafe = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.existsSafe(path)
     const entry = yield* entryFor(path)
     if (entry) return !("deleted" in entry)
     return yield* fs.existsSafe(path)
   })
 
-  const stat = Effect.fn("ReviewFs.stat")(function* (path: string) {
+  const stat = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.stat(path)
     const entry = yield* entryFor(path)
     if (entry) {
@@ -169,25 +165,21 @@ export function wrap(fs: FSUtil.Interface) {
     return yield* fs.stat(path)
   })
 
-  const isFile = Effect.fn("ReviewFs.isFile")(function* (path: string) {
+  const isFile = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.isFile(path)
     const entry = yield* entryFor(path)
     if (entry) return !("deleted" in entry)
     return yield* fs.isFile(path)
   })
 
-  const isDir = Effect.fn("ReviewFs.isDir")(function* (path: string) {
+  const isDir = Effect.fnUntraced(function* (path: string) {
     if (!ReviewOverlay.isEnabled()) return yield* fs.isDir(path)
     const entry = yield* entryFor(path)
     if (entry) return false
     return yield* fs.isDir(path)
   })
 
-  const writeWithDirs = Effect.fn("ReviewFs.writeWithDirs")(function* (
-    path: string,
-    content: string | Uint8Array,
-    mode?: number,
-  ) {
+  const writeWithDirs = Effect.fnUntraced(function* (path: string, content: string | Uint8Array, mode?: number) {
     // Only text writes can be staged and shown in the review UI. Binary writes
     // (and any write while review mode is off) go straight to disk.
     if (!ReviewOverlay.isEnabled() || typeof content !== "string") {
@@ -241,22 +233,5 @@ export function wrap(fs: FSUtil.Interface) {
     open,
   })
 }
-
-const reviewLayer = Layer.effect(
-  FSUtil.Service,
-  Effect.gen(function* () {
-    return wrap(yield* FSUtil.Service)
-  }),
-)
-
-export const node = makeGlobalNode({
-  service: FSUtil.Service,
-  layer: reviewLayer.pipe(Layer.provide(LayerNode.compile(FSUtil.node))),
-  deps: [filesystem],
-})
-
-export const defaultLayer = LayerNode.compile(node)
-
-export const layer = defaultLayer
 
 export * as ReviewFs from "./review-fs-layer"

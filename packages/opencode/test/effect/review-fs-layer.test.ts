@@ -2,13 +2,20 @@ import { afterEach, describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Option, Stream } from "effect"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ReviewOverlay } from "@opencode-ai/core/review-overlay"
 import { ReviewFs } from "@/effect/review-fs-layer"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(ReviewFs.defaultLayer)
+const it = testEffect(LayerNode.compile(FSUtil.node))
+
+// The same wrapper ToolRegistry hands to read, edit, write and apply_patch.
+const reviewFs = Effect.gen(function* () {
+  const afs = yield* FSUtil.Service
+  return ReviewFs.wrap(afs)
+})
 
 afterEach(() => {
   ReviewOverlay.reset()
@@ -20,7 +27,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stages writes without mutating disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
       ReviewOverlay.setActiveSession("sess-1")
 
@@ -40,7 +47,7 @@ describe("ReviewFs overlay", () => {
   it.instance("read-after-write returns latest staged content", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "twice.txt")
@@ -54,7 +61,7 @@ describe("ReviewFs overlay", () => {
   it.instance("readFile returns staged bytes for Bom.readFile", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "bytes.txt")
@@ -67,7 +74,7 @@ describe("ReviewFs overlay", () => {
   it.instance("markDeleted hides a staged file removed from disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "gone.txt")
@@ -90,7 +97,7 @@ describe("ReviewFs overlay", () => {
   it.instance("a deleted path that is back on disk is served from disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "restored.txt")
@@ -111,7 +118,7 @@ describe("ReviewFs overlay", () => {
   it.instance("a file re-created after a delete stays staged while the disk lacks it", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "recreated.txt")
@@ -130,7 +137,7 @@ describe("ReviewFs overlay", () => {
   it.instance("updates see staged content from disk baseline", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "base.txt")
@@ -145,7 +152,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stream returns staged content for a file that also exists on disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "stream.txt")
@@ -160,7 +167,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stream honors offset and bytesToRead on staged content", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "window.txt")
@@ -174,7 +181,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stream fails with NotFound for a deleted overlay path", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "deleted-stream.txt")
@@ -191,7 +198,7 @@ describe("ReviewFs overlay", () => {
   it.instance("open reads staged bytes for a file that only exists in the overlay", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "new-only-staged.txt")
@@ -211,7 +218,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stream and open pass through to disk when review mode is off", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
 
       const filepath = path.join(test.directory, "off.txt")
       yield* Effect.promise(() => fs.writeFile(filepath, "on disk", "utf-8"))
@@ -232,7 +239,7 @@ describe("ReviewFs overlay", () => {
   it.instance("drops a staged entry when the disk is changed by someone else", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
       ReviewOverlay.setActiveSession("sess-1")
 
@@ -250,7 +257,7 @@ describe("ReviewFs overlay", () => {
   it.instance("keeps serving staged content once the client wrote it to disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "applied.txt")
@@ -266,7 +273,7 @@ describe("ReviewFs overlay", () => {
   it.instance("consecutive edits survive a client that applies each write immediately", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "consecutive.txt")
@@ -282,7 +289,7 @@ describe("ReviewFs overlay", () => {
   it.instance("a staged new file stays visible while it is not on disk", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "brand-new.txt")
@@ -296,7 +303,7 @@ describe("ReviewFs overlay", () => {
   it.instance("stream serves the disk after an external change", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const afs = yield* FSUtil.Service
+      const afs = yield* reviewFs
       ReviewOverlay.setEnabled(true)
 
       const filepath = path.join(test.directory, "stream-external.txt")

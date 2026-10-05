@@ -3,6 +3,7 @@ import path from "path"
 import fs from "fs/promises"
 import { Effect } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EditTool } from "../../src/tool/edit"
 import { WriteTool } from "../../src/tool/write"
 import { ApplyPatchTool } from "../../src/tool/apply_patch"
@@ -31,10 +32,17 @@ const baseCtx = {
 }
 
 const layer = LayerNode.compile(
-  LayerNode.group([LSP.node, ReviewFs.node, Format.node, EventV2Bridge.node, Truncate.node, Agent.node]),
+  LayerNode.group([LSP.node, FSUtil.node, Format.node, EventV2Bridge.node, Truncate.node, Agent.node]),
 )
 
 const it = testEffect(layer)
+
+// Same wiring as ToolRegistry: the tool captures the review wrapper when it is built.
+const withReviewFs = <A, E, R>(tool: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const afs = yield* FSUtil.Service
+    return yield* tool.pipe(Effect.provideService(FSUtil.Service, ReviewFs.wrap(afs)))
+  })
 
 afterEach(async () => {
   delete process.env.OPENCODE_ACP_REVIEW
@@ -57,7 +65,7 @@ describe("review mode tools", () => {
     Effect.gen(function* () {
       enableReview()
       const test = yield* TestInstance
-      const edit = yield* EditTool
+      const edit = yield* withReviewFs(EditTool)
       const tool = yield* edit.init()
 
       const filepath = path.join(test.directory, "edit.txt")
@@ -82,7 +90,7 @@ describe("review mode tools", () => {
     Effect.gen(function* () {
       enableReview()
       const test = yield* TestInstance
-      const write = yield* WriteTool
+      const write = yield* withReviewFs(WriteTool)
       const tool = yield* write.init()
 
       const filepath = path.join(test.directory, "new.txt")
@@ -97,7 +105,7 @@ describe("review mode tools", () => {
     Effect.gen(function* () {
       enableReview()
       const test = yield* TestInstance
-      const patch = yield* ApplyPatchTool
+      const patch = yield* withReviewFs(ApplyPatchTool)
       const tool = yield* patch.init()
 
       const updatePath = path.join(test.directory, "update.txt")
