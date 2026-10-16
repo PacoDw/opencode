@@ -84,7 +84,13 @@ export const Plugin = {
                 agent: context.agent,
                 source,
               })
-              const result = yield* fileMutation.writeTextPreservingBom({ target, content: input.content })
+              const result = yield* fileMutation.writeTextPreservingBom({
+                target,
+                content: input.content,
+                sessionID: context.sessionID,
+              })
+              // A client that wrote the file already formatted it on save.
+              if (result.delegated) return result
               const bom = (yield* FileMutation.readText(environment.files, target.absolute)).bom
               if (yield* formatter.file(target.absolute)) {
                 yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)

@@ -44,6 +44,9 @@ export const toModelContent = (output: Output) =>
     ),
   ].join("\n")
 
+const directChangesNote =
+  "\n\nNote: the editor reviews the written files, but deletions and moves were applied directly to disk; rejecting the review does not undo them."
+
 type Prepared =
   | (Extract<Patch.Hunk, { readonly type: "add" }> & {
       readonly target: FileAccess.Target
@@ -207,6 +210,17 @@ export const Plugin = {
                 source,
               })
 
+              // Targets an attached client wrote. It formatted them on save, and only they reach its review.
+              const delegated = new Set<string>()
+              const writeFile = (target: FileAccess.Target, content: string) =>
+                fileMutation.write({ target, content, sessionID: context.sessionID }).pipe(
+                  Effect.tap((result) =>
+                    Effect.sync(() => {
+                      if (result.delegated) delegated.add(target.absolute)
+                    }),
+                  ),
+                  Effect.mapError((error) => fail(`Failed to write ${target.resource}`, error)),
+                )
               yield* Effect.forEach(
                 prepared,
                 (change) =>
@@ -224,9 +238,7 @@ export const Plugin = {
                     }
                     if (change.type === "update" && change.moveTarget) {
                       const moveTarget = change.moveTarget
-                      yield* environment.files
-                        .write(moveTarget.absolute, new TextEncoder().encode(change.content))
-                        .pipe(Effect.mapError((error) => fail(`Failed to write ${moveTarget.resource}`, error)))
+                      yield* writeFile(moveTarget, change.content)
                       yield* environment.files
                         .remove(change.target.absolute)
                         .pipe(
@@ -241,9 +253,7 @@ export const Plugin = {
                       })
                       return
                     }
-                    yield* environment.files
-                      .write(change.target.absolute, new TextEncoder().encode(change.content))
-                      .pipe(Effect.mapError((error) => fail(`Failed to write ${change.target.resource}`, error)))
+                    yield* writeFile(change.target, change.content)
                     applied.push({
                       type: change.type,
                       resource: change.target.resource,
@@ -262,7 +272,7 @@ export const Plugin = {
                     )
                     formatted.set(
                       target,
-                      (yield* formatter.file(target))
+                      !delegated.has(target) && (yield* formatter.file(target))
                         ? yield* FileMutation.syncTextBom(environment.files, target, current.bom).pipe(
                             Effect.mapError((error) => fail(`Failed to sync ${target}`, error)),
                           )
@@ -276,13 +286,17 @@ export const Plugin = {
                 const target = change.type === "update" && change.moveTarget ? change.moveTarget : change.target
                 return patchFile(change, formatted.get(target.absolute))
               })
-              return { applied, files }
+              // The client protocol has no delete or rename, so those changes skip the client's review.
+              const direct =
+                delegated.size > 0 &&
+                prepared.some((change) => change.type === "delete" || (change.type === "update" && change.moveTarget))
+              return { output: { applied, files }, note: direct ? directChangesNote : "" }
             }).pipe(
               fileMutation.withLock(lockTargets),
-              Effect.map((output) => ({
-                output,
-                content: toModelContent(output),
-                metadata: { files: output.files },
+              Effect.map((result) => ({
+                output: result.output,
+                content: toModelContent(result.output) + result.note,
+                metadata: { files: result.output.files },
               })),
               Effect.mapError((error) =>
                 error instanceof ToolFailure ? error : new ToolFailure({ message: "Unable to apply patch", error }),

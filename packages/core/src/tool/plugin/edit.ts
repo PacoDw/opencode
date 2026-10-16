@@ -302,11 +302,15 @@ export const Plugin = {
               const result = yield* fileMutation.write({
                 target,
                 content: Bom.join(replaced, original.bom || replacementBom),
+                sessionID: context.sessionID,
               })
               const bom = original.bom || replacementBom
-              const formatted = (yield* formatter.file(target.absolute))
-                ? yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
-                : (yield* FileMutation.readText(environment.files, target.absolute)).text
+              // A client that wrote the file already formatted it on save; formatting again here would change
+              // the file outside the client's review.
+              const formatted =
+                !result.delegated && (yield* formatter.file(target.absolute))
+                  ? yield* FileMutation.syncTextBom(environment.files, target.absolute, bom)
+                  : (yield* FileMutation.readText(environment.files, target.absolute)).text
               return {
                 files: [fileDiff(result.resource, source, formatted)],
                 replacements,
