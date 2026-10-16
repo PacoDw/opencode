@@ -142,7 +142,7 @@ export function make(input: {
       const created = yield* input.client.session
         .create({ location: { directory: AbsolutePath.make(params.cwd) }, ...ACPDirectories.grant(directories) })
         .pipe(Effect.catch(ACPClient.classify))
-      const attachment = yield* input.sessions.attach(created, params.cwd, mcpServers)
+      const attachment = yield* input.sessions.attach(created, params.cwd, mcpServers, directories)
       return { sessionId: attachment.attached.id, configOptions: attachment.configOptions }
     }),
     loadSession: Effect.fnUntraced(function* (params) {
@@ -150,7 +150,7 @@ export function make(input: {
       const mcpServers = yield* supportedMcpServers(params.mcpServers)
       const session = yield* getSession(params.sessionId, params.cwd)
       yield* ACPDirectories.activate(input.client, session, directories)
-      const attachment = yield* input.sessions.attach(session, session.location.directory, mcpServers)
+      const attachment = yield* input.sessions.attach(session, session.location.directory, mcpServers, directories)
       return yield* ACPReplay.history(
         input.client,
         input.connection,
@@ -205,7 +205,7 @@ export function make(input: {
       const mcpServers = yield* supportedMcpServers(params.mcpServers)
       const session = yield* getSession(params.sessionId, params.cwd)
       yield* ACPDirectories.activate(input.client, session, directories)
-      const attachment = yield* input.sessions.attach(session, session.location.directory, mcpServers)
+      const attachment = yield* input.sessions.attach(session, session.location.directory, mcpServers, directories)
       return { configOptions: attachment.configOptions }
     }),
     closeSession: Effect.fnUntraced(function* (params) {
@@ -220,7 +220,7 @@ export function make(input: {
       const forked = yield* input.client.session.fork({ sessionID: session.id }).pipe(Effect.catch(ACPClient.classify))
       // Forks inherit the source's grants; replace them with this request's.
       yield* ACPDirectories.activate(input.client, forked, directories)
-      const attachment = yield* input.sessions.attach(forked, forked.location.directory, mcpServers)
+      const attachment = yield* input.sessions.attach(forked, forked.location.directory, mcpServers, directories)
       return { sessionId: attachment.attached.id, configOptions: attachment.configOptions }
     }),
     setSessionConfigOption: Effect.fnUntraced(function* (params) {

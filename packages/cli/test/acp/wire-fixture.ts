@@ -16,6 +16,8 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionNotification,
+  type WriteTextFileRequest,
+  type WriteTextFileResponse,
 } from "@agentclientprotocol/sdk"
 import { OpenCode } from "@opencode/client/effect"
 import type { OpenCodeEventEncoded } from "@opencode/protocol/groups/event"
@@ -89,6 +91,8 @@ const AgentBody = Schema.Struct({ agent: Schema.String })
 const ReplyBody = Schema.Struct({ decision: Schema.Literals(["once", "always", "reject"]) })
 const FormReplyBody = Schema.Struct({ answer: Form.Answer })
 const McpBody = Schema.Struct({ config: Schema.Unknown })
+const ClientFileAttachBody = Schema.Struct({ roots: Schema.Array(Schema.String) })
+const ClientFileReplyBody = Schema.Struct({ error: Schema.optional(Schema.String) })
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 type Submission =
@@ -145,6 +149,7 @@ export type WireOptions = {
     request: CreateElicitationRequest,
     signal: AbortSignal,
   ) => CreateElicitationResponse | Promise<CreateElicitationResponse>
+  readonly writeTextFile?: (request: WriteTextFileRequest) => WriteTextFileResponse | Promise<WriteTextFileResponse>
   readonly cancelDrainTimeout?: Duration.Input
 }
 
@@ -166,6 +171,7 @@ export type InitializeOptions = {
   readonly terminalAuth?: boolean
   readonly elicitation?: boolean
   readonly compaction?: CompactionCapabilities | null
+  readonly writeTextFile?: boolean
 }
 
 const testModel = {
@@ -380,6 +386,20 @@ export function toolFailed(
   })
 }
 
+export function clientFileWriteRequested(
+  sessionID: string,
+  id: string,
+  input: { readonly path: string; readonly content: string; readonly origin?: string },
+) {
+  return ephemeralEvent("client-file.write.requested", {
+    id,
+    sessionID,
+    origin: input.origin ?? sessionID,
+    path: input.path,
+    content: input.content,
+  })
+}
+
 export function permissionAsked(
   sessionID: string,
   id: string,
@@ -415,6 +435,7 @@ export async function startWire(options: WireOptions = {}) {
   const permissions: RequestPermissionRequest[] = []
   const childUpdates: Array<typeof ChildUpdate.Type> = []
   const elicitations: CreateElicitationRequest[] = []
+  const fileWrites: WriteTextFileRequest[] = []
   // Client handlers record SDK-validated params; responses wait until they have seen every earlier agent message.
   const counts = { sent: 0, handled: 0 }
   const handled = <Value>(list: Value[], value: Value) => {
@@ -452,6 +473,10 @@ export async function startWire(options: WireOptions = {}) {
     .onRequest("elicitation/create", (ctx) => {
       handled(elicitations, ctx.params)
       return options.elicitation?.(ctx.params, ctx.signal) ?? { action: "cancel" }
+    })
+    .onRequest("fs/write_text_file", (ctx) => {
+      handled(fileWrites, ctx.params)
+      return options.writeTextFile?.(ctx.params) ?? {}
     })
     .connect({
       writable: clientStream.writable,
@@ -503,6 +528,7 @@ export async function startWire(options: WireOptions = {}) {
     request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
+        ...(capabilities.writeTextFile ? { fs: { writeTextFile: true } } : {}),
         ...(capabilities.elicitation ? { elicitation: { form: {} } } : {}),
         ...(capabilities.compaction !== undefined ? { session: { compaction: capabilities.compaction } } : {}),
         _meta: {
@@ -520,6 +546,7 @@ export async function startWire(options: WireOptions = {}) {
     permissions,
     childUpdates,
     elicitations,
+    fileWrites,
     logs,
     request,
     until,
@@ -589,6 +616,11 @@ function startServer(options: WireOptions, changed: () => void) {
   const cancelledForms: Array<{ readonly sessionID: string; readonly formID: string; readonly message?: string }> = []
   const repliedForms: FormReply[] = []
   const mcp: Array<{ readonly name: string; readonly directory?: string; readonly config: unknown }> = []
+  const clientFiles = {
+    attached: [] as Array<{ readonly sessionID: string; readonly roots: ReadonlyArray<string> }>,
+    detached: [] as string[],
+    replies: [] as Array<{ readonly sessionID: string; readonly requestID: string; readonly error?: string }>,
+  }
   const fake = {
     requests,
     catalog,
@@ -604,6 +636,7 @@ function startServer(options: WireOptions, changed: () => void) {
     cancelledForms,
     repliedForms,
     mcp,
+    clientFiles,
     send(...events: ReadonlyArray<OpenCodeEvent>) {
       events.forEach((event) => {
         const seq = ++counter.events
@@ -838,6 +871,27 @@ function startServer(options: WireOptions, changed: () => void) {
           const reply = { sessionID: req.params.sessionID, formID: req.params.formID, answer: input.answer }
           fake.repliedForms.push(reply)
           await emit(options.onFormReply?.(reply))
+          return noContent()
+        }),
+      },
+      "/api/session/:sessionID/client-file": {
+        PUT: body(ClientFileAttachBody, (req, input) => {
+          if (!fake.sessions.has(req.params.sessionID)) return notFound(req.params.sessionID)
+          fake.clientFiles.attached.push({ sessionID: req.params.sessionID, roots: input.roots })
+          return noContent()
+        }),
+        DELETE: route((req) => {
+          fake.clientFiles.detached.push(req.params.sessionID)
+          return noContent()
+        }),
+      },
+      "/api/session/:sessionID/client-file/:requestID/reply": {
+        POST: body(ClientFileReplyBody, (req, input) => {
+          fake.clientFiles.replies.push({
+            sessionID: req.params.sessionID,
+            requestID: req.params.requestID,
+            ...(input.error === undefined ? {} : { error: input.error }),
+          })
           return noContent()
         }),
       },

@@ -608,6 +608,7 @@ function translate(row: Row) {
       childSessionUpdates: context.childUpdates,
       formElicitation: false,
       compaction: context.compaction,
+      writeTextFile: false,
     }
     return {
       updates: row.messages.flatMap((message) => [

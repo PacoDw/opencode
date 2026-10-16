@@ -14,6 +14,7 @@ import { Cause, Deferred, Effect, Ref, type Scope } from "effect"
 import { ACPCapabilities } from "./capabilities"
 import { ACPCatalog } from "./catalog"
 import { ACPClient } from "./client"
+import { ACPClientFile } from "./client-file"
 import { ACPConnection } from "./connection"
 import { ACPError } from "./error"
 import { ACPService } from "./service"
@@ -119,8 +120,9 @@ export const connect = Effect.fnUntraced(function* (client: OpenCodeClient, stre
   )
   const acp = ACPConnection.make(app, stream)
   const connection = acp.connection
-  const sessions = yield* ACPSessions.make({ client, connection, catalog })
   const capabilities = yield* Ref.make(ACPCapabilities.parse(undefined))
+  const clientFile = yield* ACPClientFile.make({ client, connection, capabilities })
+  const sessions = yield* ACPSessions.make({ client, connection, catalog, clientFile })
   const turn = yield* ACPTurn.make({ client, connection, sessions, catalog, capabilities })
   yield* Deferred.succeed(ready, {
     service: ACPService.make({ client, connection, catalog, sessions, capabilities, turn }),

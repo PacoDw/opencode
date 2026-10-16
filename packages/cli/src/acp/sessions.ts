@@ -6,6 +6,7 @@ import type { Session } from "@opencode/schema/session"
 import { Cause, Deferred, Effect, Exit, Queue, Ref, Scope, Stream } from "effect"
 import type { ACPCatalog, Catalog } from "./catalog"
 import { ACPClient } from "./client"
+import type { ACPClientFile } from "./client-file"
 import { availableCommands, configOptions, type Change, type Selection } from "./config-option"
 import { ACPConnection } from "./connection"
 import { ACPError } from "./error"
@@ -19,10 +20,12 @@ export type Attached = {
 }
 
 export interface Interface {
+  /** `directories` are this request's additional directories; `session` may still carry earlier ones. */
   readonly attach: (
     session: Session.Info,
     cwd: string,
     mcpServers: readonly SupportedMcpServer[],
+    directories: readonly string[],
   ) => Effect.Effect<{ readonly attached: Attached; readonly configOptions: SessionConfigOption[] }, ACPError.Failure>
   readonly detach: (sessionID: string) => Effect.Effect<void>
   readonly release: (attached: Attached) => Effect.Effect<void>
@@ -43,6 +46,7 @@ export const make = Effect.fnUntraced(function* (input: {
   readonly client: OpenCodeClient
   readonly connection: ACPConnection.Interface
   readonly catalog: ACPCatalog.Interface
+  readonly clientFile: ACPClientFile.Interface
 }) {
   const scope = yield* Effect.scope
   const sessions = new Map<string, Entry>()
@@ -121,7 +125,7 @@ export const make = Effect.fnUntraced(function* (input: {
     })
 
   return {
-    attach: Effect.fn("cli.acp.sessions.attach")(function* (session, cwd, mcpServers) {
+    attach: Effect.fn("cli.acp.sessions.attach")(function* (session, cwd, mcpServers, directories) {
       yield* Deferred.await(connected)
       const current = yield* input.catalog.get(cwd)
       const entry: Entry = {
@@ -138,6 +142,11 @@ export const make = Effect.fnUntraced(function* (input: {
       sessions.set(session.id, entry)
       if (replaced) yield* Scope.close(replaced.scope, Exit.void)
       yield* registerMcp(entry.attached, mcpServers).pipe(Effect.onError(() => remove(session.id, entry)))
+      // Bound to the entry scope, so detaching, releasing, or replacing the session stops the routing.
+      yield* input.clientFile.attach(session.id, [cwd, ...directories]).pipe(
+        Scope.provide(entry.scope),
+        Effect.onError(() => remove(session.id, entry)),
+      )
       const responded = yield* ACPConnection.Responded
       // `changes` replays the latest catalog, so a reload since `current` still pushes.
       // One fold keeps catalog and selection consistent.

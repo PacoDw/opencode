@@ -10,6 +10,8 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
   type Stream,
+  type WriteTextFileRequest,
+  type WriteTextFileResponse,
 } from "@agentclientprotocol/sdk"
 import { Context, Deferred, Effect } from "effect"
 
@@ -26,6 +28,7 @@ export interface Interface {
   readonly createElicitation: (
     params: CreateElicitationRequest,
   ) => Effect.Effect<CreateElicitationResponse, RequestError>
+  readonly writeTextFile: (params: WriteTextFileRequest) => Effect.Effect<WriteTextFileResponse, RequestError>
   readonly responded: (requestId: JsonRpcId) => Effect.Effect<void>
 }
 
@@ -59,6 +62,10 @@ export function make(app: AgentApp, stream: Stream) {
       createElicitation: (params) =>
         promise((signal) =>
           agent.client.request(methods.client.elicitation.create, params, { cancellationSignal: signal }),
+        ),
+      writeTextFile: (params) =>
+        promise((signal) =>
+          agent.client.request(methods.client.fs.writeTextFile, params, { cancellationSignal: signal }),
         ),
       responded: (requestId) => {
         const responded = Deferred.makeUnsafe<void>()

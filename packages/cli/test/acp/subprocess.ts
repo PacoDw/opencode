@@ -37,6 +37,10 @@ type AcpProcess = {
   readonly pid: number
   readonly exited: Promise<number>
   readonly request: <T>(method: string, params?: unknown) => Promise<JsonRpcResponse<T>>
+  /** Waits for a request the agent sent to the client. */
+  readonly clientRequest: (method: string) => Promise<JsonRpcMessage>
+  /** Answers a request the agent sent to the client. */
+  readonly respond: (id: unknown, result: unknown) => Promise<void>
   readonly close: () => Promise<number>
   readonly stderr: () => string
   readonly [Symbol.asyncDispose]: () => Promise<void>
@@ -107,11 +111,11 @@ export async function createAcpFixture(
   }
 }
 
-export function initialize(acp: AcpProcess) {
+export function initialize(acp: AcpProcess, clientCapabilities: Record<string, unknown> = {}) {
   return acp
     .request<InitializeResponse>("initialize", {
       protocolVersion: 1,
-      clientCapabilities: { _meta: { "terminal-auth": true } },
+      clientCapabilities: { _meta: { "terminal-auth": true }, ...clientCapabilities },
       clientInfo: { name: "opencode-local-acp", version: "0.1.0" },
     })
     .then(expectOk)
@@ -273,7 +277,7 @@ function spawnAcp(input: { readonly env: Record<string, string | undefined> }): 
     })
   }
 
-  const write = async (message: JsonRpcRequest) => {
+  const write = async (message: JsonRpcMessage) => {
     if (inputClosed) throw new Error("ACP stdin is closed")
     await child.stdin.write(encoder.encode(`${JSON.stringify(message)}\n`))
     await child.stdin.flush()
@@ -294,6 +298,9 @@ function spawnAcp(input: { readonly env: Record<string, string | undefined> }): 
     pid: child.pid,
     exited: child.exited,
     request,
+    clientRequest: (method) =>
+      take((message) => message.method === method && "id" in message, 20_000, `${method} request`),
+    respond: (id, result) => write({ jsonrpc: "2.0", id, result }),
     async close() {
       if (!inputClosed) {
         inputClosed = true

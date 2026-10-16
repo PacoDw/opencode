@@ -42,7 +42,7 @@ const questions = (sessionID: string, id = "frm_question") =>
     },
   })
 
-const capable = { childSessionUpdates: false, formElicitation: true, compaction: false }
+const capable = { childSessionUpdates: false, formElicitation: true, compaction: false, writeTextFile: false }
 
 const form = (
   fields: ACPElicitation.AskedForm["fields"],

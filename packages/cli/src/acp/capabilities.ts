@@ -11,6 +11,7 @@ export function parse(client: ClientCapabilities | undefined) {
     childSessionUpdates: client?._meta?.[ChildSessionUpdates] === true,
     formElicitation: elicitation?.form !== undefined && elicitation.form !== null,
     compaction: compaction !== undefined && compaction !== null,
+    writeTextFile: client?.fs?.writeTextFile === true,
   }
 }
 
