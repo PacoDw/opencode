@@ -6,6 +6,7 @@ import { Node } from "@opencode/util/effect/app-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Bus } from "@opencode/core/bus"
+import { ClientFile } from "@opencode/core/client-file"
 import { EventLogger } from "@opencode/core/event-logger"
 import { FileSystemSearch } from "@opencode/core/filesystem/search"
 import { Credential } from "@opencode/core/credential"
@@ -60,6 +61,7 @@ const applicationServiceNodes = [
   Project.sweepNode,
   Worktree.node,
   Session.node,
+  ClientFile.node,
   Instance.node,
   SessionTransfer.node,
   SdkPlugins.node,

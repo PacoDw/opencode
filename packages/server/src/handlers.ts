@@ -6,6 +6,7 @@ import { ModelHandler } from "./handlers/model"
 import { ProviderHandler } from "./handlers/provider"
 import { SessionHandler } from "./handlers/session"
 import { PermissionHandler } from "./handlers/permission"
+import { ClientFileHandler } from "./handlers/client-file"
 import { FileSystemHandler } from "./handlers/fs"
 import { FormHandler } from "./handlers/form"
 import { CommandHandler } from "./handlers/command"
@@ -52,6 +53,7 @@ export const handlers = Layer.mergeAll(
   ProjectHandler,
   FormHandler,
   PermissionHandler,
+  ClientFileHandler,
   FileSystemHandler,
   CommandHandler,
   SkillHandler,

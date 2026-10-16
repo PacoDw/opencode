@@ -31,6 +31,7 @@ import type { Integration } from "@opencode/schema/integration"
 import type { Mcp } from "@opencode/schema/mcp"
 import type { Credential } from "@opencode/schema/credential"
 import type { PermissionSaved } from "@opencode/schema/permission-saved"
+import type { ClientFile } from "@opencode/schema/client-file"
 import type { FileSystem } from "@opencode/schema/filesystem"
 import type { Command } from "@opencode/schema/command"
 import type { OpenCodeEvent } from "@opencode/protocol/groups/event"
@@ -1824,6 +1825,34 @@ export interface PermissionApi<E = never> {
   readonly reply: PermissionReplyOperation<E>
 }
 
+export type ClientFileAttachInput = { readonly sessionID: Session.ID; readonly roots: ReadonlyArray<AbsolutePath> }
+export type ClientFileAttachOutput = void
+export type ClientFileAttachOperation<E = never> = (
+  input: ClientFileAttachInput,
+) => Effect.Effect<ClientFileAttachOutput, E>
+
+export type ClientFileDetachInput = { readonly sessionID: Session.ID }
+export type ClientFileDetachOutput = void
+export type ClientFileDetachOperation<E = never> = (
+  input: ClientFileDetachInput,
+) => Effect.Effect<ClientFileDetachOutput, E>
+
+export type ClientFileReplyInput = {
+  readonly sessionID: Session.ID
+  readonly requestID: ClientFile.ID
+  readonly error?: string | undefined
+}
+export type ClientFileReplyOutput = void
+export type ClientFileReplyOperation<E = never> = (
+  input: ClientFileReplyInput,
+) => Effect.Effect<ClientFileReplyOutput, E>
+
+export interface ClientFileApi<E = never> {
+  readonly attach: ClientFileAttachOperation<E>
+  readonly detach: ClientFileDetachOperation<E>
+  readonly reply: ClientFileReplyOperation<E>
+}
+
 export type FileListInput = {
   readonly location?: { readonly directory?: string | undefined } | undefined
   readonly path?: string | undefined
@@ -2350,6 +2379,7 @@ export interface AppApi<E = never> {
   readonly project: ProjectApi<E>
   readonly form: FormApi<E>
   readonly permission: PermissionApi<E>
+  readonly clientFile: ClientFileApi<E>
   readonly file: FileApi<E>
   readonly command: CommandApi<E>
   readonly skill: SkillApi<E>

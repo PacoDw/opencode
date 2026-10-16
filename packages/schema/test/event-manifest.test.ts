@@ -13,6 +13,7 @@ import {
   Session,
   Workspace,
 } from "../src/index.js"
+import { ClientFile } from "../src/client-file.js"
 import { EventManifest } from "../src/event-manifest.js"
 import { FileSystemV1 } from "../src/filesystem-v1.js"
 import { McpEvent } from "../src/mcp-event.js"
@@ -97,6 +98,15 @@ describe("public event manifest", () => {
     expect(EventManifest.Server.has("credential.deleted")).toBe(false)
     expect(EventManifest.Server.has("integration.connection.updated")).toBe(false)
     expect(EventManifest.Latest.has("integration.connection.updated")).toBe(false)
+  })
+
+  test("keeps client file write requests public and ephemeral", () => {
+    expect(ClientFile.Event.Definitions).toEqual([ClientFile.Event.WriteRequested])
+    expect(EventManifest.Server.get("client-file.write.requested")).toBe(ClientFile.Event.WriteRequested)
+    expect(EventManifest.Latest.get("client-file.write.requested")).toBe(ClientFile.Event.WriteRequested)
+    expect(ClientFile.Event.WriteRequested.durability).toBe("ephemeral")
+    expect(EventManifest.Durable.has("client-file.write.requested.1")).toBe(false)
+    expect(ClientFile.ID.create()).toStartWith("cfw_")
   })
 
   test("derives durable definitions from explicit definition durability", () => {

@@ -185,6 +185,12 @@ import type {
   PermissionGetOutput,
   PermissionReplyInput,
   PermissionReplyOutput,
+  ClientFileAttachInput,
+  ClientFileAttachOutput,
+  ClientFileDetachInput,
+  ClientFileDetachOutput,
+  ClientFileReplyInput,
+  ClientFileReplyOutput,
   FileReadInput,
   FileReadOutput,
   FileListInput,
@@ -1668,6 +1674,43 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/permission/${encodeURIComponent(input.requestID)}/reply`,
             body: { decision: input["decision"], message: input["message"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404],
+            empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    clientFile: {
+      attach: (input: ClientFileAttachInput, requestOptions?: RequestOptions) =>
+        request<ClientFileAttachOutput>(
+          {
+            method: "PUT",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/client-file`,
+            body: { roots: input["roots"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      detach: (input: ClientFileDetachInput, requestOptions?: RequestOptions) =>
+        request<ClientFileDetachOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/client-file`,
+            successStatus: 204,
+            declaredStatuses: [400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      reply: (input: ClientFileReplyInput, requestOptions?: RequestOptions) =>
+        request<ClientFileReplyOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/client-file/${encodeURIComponent(input.requestID)}/reply`,
+            body: { error: input["error"] },
             successStatus: 204,
             declaredStatuses: [400, 401, 404],
             empty: true,

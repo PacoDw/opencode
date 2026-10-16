@@ -8,6 +8,7 @@ import { ModelGroup } from "./groups/model.js"
 import { ProviderGroup } from "./groups/provider.js"
 import { makeSessionGroup } from "./groups/session.js"
 import { makePermissionGroup } from "./groups/permission.js"
+import { ClientFileGroup } from "./groups/client-file.js"
 import { FileSystemGroup } from "./groups/fs.js"
 import { makeFormGroup } from "./groups/form.js"
 import { CommandGroup } from "./groups/command.js"
@@ -98,6 +99,7 @@ type ApiGroups<
   | typeof VoiceGroup
   | typeof PersistentPtyGroup
   | typeof CredentialGroup
+  | typeof ClientFileGroup
   | LocationGroups<LocationId>
   | LocationGroup<LocationId, LocationService>
   | PtyGroups<LocationId, LocationService>
@@ -175,6 +177,7 @@ const makeApiFromGroup = <
     .add(ProjectGroup.middleware(locationMiddleware))
     .add(makeFormGroup(locationMiddleware))
     .add(makePermissionGroup(locationMiddleware, sessionLocationMiddleware))
+    .add(ClientFileGroup)
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(CommandGroup.middleware(locationMiddleware))
     .add(SkillGroup.middleware(locationMiddleware))

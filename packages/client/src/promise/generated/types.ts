@@ -266,6 +266,8 @@ export type RpcOutput = { output?: any }
 
 export type PermissionReply = "once" | "always" | "reject"
 
+export type ClientFileID = string
+
 export type PtyID = string
 
 export type FormMetadata1 = { [x: string]: any }
@@ -1650,6 +1652,15 @@ export type PermissionReplied = {
   data: { sessionID: SessionID; requestID: PermissionID; reply: PermissionReply }
 }
 
+export type ClientFileWriteRequested = {
+  id: EventID
+  created: number
+  metadata?: { [x: string]: any }
+  type: "client-file.write.requested"
+  location?: LocationRef
+  data: { id: ClientFileID; sessionID: SessionID; origin: SessionID; path: AbsolutePath; content: string }
+}
+
 export type PluginUpdated = {
   id: EventID
   created: number
@@ -2642,6 +2653,7 @@ export type V2Event =
   | ReferenceUpdated
   | PermissionAsked
   | PermissionReplied
+  | ClientFileWriteRequested
   | PluginUpdated
   | ProjectUpdated
   | WorktreeUpdated
@@ -2881,6 +2893,14 @@ export type PermissionNotFoundError = {
 }
 export const isPermissionNotFoundError = (value: unknown): value is PermissionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionNotFoundError"
+
+export type ClientFileRequestNotFoundError = {
+  readonly _tag: "ClientFileRequestNotFoundError"
+  readonly requestID: string
+  readonly message: string
+}
+export const isClientFileRequestNotFoundError = (value: unknown): value is ClientFileRequestNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ClientFileRequestNotFoundError"
 
 export type FileNotFoundError = { readonly _tag: "FileNotFoundError"; readonly path: string; readonly message: string }
 export const isFileNotFoundError = (value: unknown): value is FileNotFoundError =>
@@ -5518,6 +5538,25 @@ export type PermissionReplyInput = {
 }
 
 export type PermissionReplyOutput = void
+
+export type ClientFileAttachInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly roots: { readonly roots: ReadonlyArray<string> }["roots"]
+}
+
+export type ClientFileAttachOutput = void
+
+export type ClientFileDetachInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type ClientFileDetachOutput = void
+
+export type ClientFileReplyInput = {
+  readonly sessionID: { readonly sessionID: string; readonly requestID: string }["sessionID"]
+  readonly requestID: { readonly sessionID: string; readonly requestID: string }["requestID"]
+  readonly error?: { readonly error?: string | undefined }["error"]
+}
+
+export type ClientFileReplyOutput = void
 
 export type FileReadInput = {
   readonly location?: { readonly location?: { readonly directory?: string | undefined } | undefined }["location"]

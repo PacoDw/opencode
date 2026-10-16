@@ -2,6 +2,7 @@ export * as EventManifest from "./event-manifest.js"
 
 import { Schema } from "effect"
 import { Agent } from "./agent.js"
+import { ClientFile } from "./client-file.js"
 import { Command } from "./command.js"
 import { Config } from "./config.js"
 import { Credential } from "./credential.js"
@@ -54,6 +55,7 @@ const featureDefinitions = Event.inventory(
   ...FileSystem.Event.Definitions,
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,
+  ...ClientFile.Event.Definitions,
   ...Plugin.Event.Definitions,
   ...Project.Event.Definitions,
   ...Worktree.Event.Definitions,

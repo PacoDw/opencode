@@ -51,6 +51,7 @@ export const groupNames = {
   "server.credential": "credential",
   "server.form": "form",
   "server.permission": "permission",
+  "server.clientFile": "clientFile",
   "server.fs": "file",
   "server.command": "command",
   "server.skill": "skill",

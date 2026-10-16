@@ -191,6 +191,12 @@ import type {
   PermissionGetOutput,
   PermissionReplyInput,
   PermissionReplyOutput,
+  ClientFileAttachInput,
+  ClientFileAttachOutput,
+  ClientFileDetachInput,
+  ClientFileDetachOutput,
+  ClientFileReplyInput,
+  ClientFileReplyOutput,
   FileListInput,
   FileListOutput,
   FileFindInput,
@@ -1258,6 +1264,35 @@ const adaptGroupPermission = (raw: RawClient["server.permission"]) => ({
   reply: EndpointPermissionReply(raw),
 })
 
+const EndpointClientFileAttach = (raw: RawClient["server.clientFile"]) => (input: ClientFileAttachInput) =>
+  preserveEffect<ClientFileAttachOutput>()(
+    raw["session.clientFile.attach"]({
+      params: { sessionID: input["sessionID"] },
+      payload: { roots: input["roots"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const EndpointClientFileDetach = (raw: RawClient["server.clientFile"]) => (input: ClientFileDetachInput) =>
+  preserveEffect<ClientFileDetachOutput>()(
+    raw["session.clientFile.detach"]({ params: { sessionID: input["sessionID"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointClientFileReply = (raw: RawClient["server.clientFile"]) => (input: ClientFileReplyInput) =>
+  preserveEffect<ClientFileReplyOutput>()(
+    raw["session.clientFile.reply"]({
+      params: { sessionID: input["sessionID"], requestID: input["requestID"] },
+      payload: { error: input["error"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupClientFile = (raw: RawClient["server.clientFile"]) => ({
+  attach: EndpointClientFileAttach(raw),
+  detach: EndpointClientFileDetach(raw),
+  reply: EndpointClientFileReply(raw),
+})
+
 const EndpointFileList = (raw: RawClient["server.fs"]) => (input?: FileListInput) =>
   preserveEffect<FileListOutput>()(
     raw["fs.list"]({ query: { location: input?.["location"], path: input?.["path"] } }).pipe(
@@ -1684,6 +1719,7 @@ const adaptClient = (raw: RawClient) => ({
   project: adaptGroupProject(raw["server.project"]),
   form: adaptGroupForm(raw["server.form"]),
   permission: adaptGroupPermission(raw["server.permission"]),
+  clientFile: adaptGroupClientFile(raw["server.clientFile"]),
   file: adaptGroupFile(raw["server.fs"]),
   command: adaptGroupCommand(raw["server.command"]),
   skill: adaptGroupSkill(raw["server.skill"]),

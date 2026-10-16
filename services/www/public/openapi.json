@@ -9053,6 +9053,207 @@
         }
       }
     },
+    "/api/session/{sessionID}/client-file": {
+      "put": {
+        "tags": ["clientFile"],
+        "operationId": "session.clientFile.attach",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/Session.ID"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Route the session's text file writes under the given roots, including its subagents' writes, through `client-file.write.requested` events instead of the local filesystem.",
+        "summary": "Attach a file-writing client",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "roots": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AbsolutePath"
+                    }
+                  }
+                },
+                "required": ["roots"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      },
+      "delete": {
+        "tags": ["clientFile"],
+        "operationId": "session.clientFile.detach",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/Session.ID"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Stop routing the session's writes through the client and fail its pending write requests.",
+        "summary": "Detach a file-writing client"
+      }
+    },
+    "/api/session/{sessionID}/client-file/{requestID}/reply": {
+      "post": {
+        "tags": ["clientFile"],
+        "operationId": "session.clientFile.reply",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/Session.ID"
+            },
+            "required": true
+          },
+          {
+            "name": "requestID",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/ClientFile.ID"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestErrorEncoded"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedErrorEncoded"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ClientFileRequestNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientFileRequestNotFoundErrorEncoded"
+                }
+              }
+            }
+          }
+        },
+        "description": "Report that the client wrote the file, or why it could not.",
+        "summary": "Reply to a client file write request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
     "/api/fs/read/*": {
       "get": {
         "tags": ["filesystem"],
@@ -13889,6 +14090,27 @@
           }
         },
         "required": ["_tag", "agentID", "message"],
+        "additionalProperties": false
+      },
+      "ClientFile.ID": {
+        "type": "string",
+        "pattern": "^cfw_"
+      },
+      "ClientFileRequestNotFoundErrorEncoded": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ClientFileRequestNotFoundError"]
+          },
+          "requestID": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
       },
       "Command.Info": {
@@ -21121,6 +21343,10 @@
     {
       "name": "permission",
       "description": "Experimental permission routes."
+    },
+    {
+      "name": "clientFile",
+      "description": "Experimental client file routes."
     },
     {
       "name": "filesystem",
